@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "author": "Lucas Daris de Souza",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-c6-devkitc-1",
+      "id": "esp",
+      "top": -4.31,
+      "left": 4.12,
+      "attrs": { "builder": "esp-idf" }
+    },
+    {
+      "type": "wokwi-analog-joystick",
+      "id": "joystick1",
+      "top": -77.4,
+      "left": -119.4,
+      "attrs": {}
+    },
+    { "type": "wokwi-servo", "id": "servo1", "top": -2, "left": 182.4, "attrs": {} },
+    { "type": "wokwi-servo", "id": "servo2", "top": 103.6, "left": 201.6, "attrs": {} },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -147.6,
+      "left": 109.8,
+      "attrs": { "color": "green", "flip": "1" }
+    },
+    { "type": "wokwi-resistor", "id": "r1", "top": -110, "left": 60, "attrs": { "value": "330" } },
+    { "type": "wokwi-mpu6050", "id": "imu1", "top": -44.18, "left": 146.32, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "joystick1:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "joystick1:VCC", "esp:3V3", "red", [ "v19.2", "h76.8", "v-28.8" ] ],
+    [ "joystick1:HORZ", "esp:1", "green", [ "v57.6", "h9.6" ] ],
+    [ "joystick1:VERT", "esp:4", "green", [ "v19.2" ] ],
+    [ "joystick1:SEL", "esp:6", "purple", [ "v38.4", "h28.8" ] ],
+    [ "servo1:GND", "esp:GND.4", "black", [ "h0" ] ],
+    [ "servo1:V+", "esp:5V", "red", [ "h-9.6", "v163.3", "h-153.6" ] ],
+    [ "servo1:PWM", "esp:15", "green", [ "h-57.6", "v-9.4" ] ],
+    [ "servo2:GND", "esp:GND.1", "black", [ "h-76.8", "v115.2", "h-134.4", "v-96", "h9.6" ] ],
+    [ "servo2:V+", "esp:5V", "red", [ "h-9.6", "v115.3", "h-220.8", "v-115.2" ] ],
+    [ "servo2:PWM", "esp:2", "green", [ "h-19.2", "v77", "h-240", "v-9.6" ] ],
+    [ "led1:A", "r1:2", "green", [ "h0" ] ],
+    [ "r1:1", "esp:10", "green", [ "h-194.4", "v219.55" ] ],
+    [ "led1:C", "esp:GND.2", "black", [ "v20", "h-19.6", "v248.8" ] ],
+    [ "imu1:SDA", "esp:8", "blue", [ "v-9.6", "h-182.32" ] ],
+    [ "imu1:SCL", "esp:9", "yellow", [ "v-38.4", "h-104.42" ] ],
+    [ "imu1:VCC", "esp:3V3", "red", [ "v-19.2", "h-211.12" ] ],
+    [ "esp:GND.4", "imu1:GND", "black", [ "h37.3", "v-96", "h76.8", "v9.6" ] ]
+  ],
+  "dependencies": {}
+}
