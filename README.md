@@ -89,10 +89,10 @@ Todas as tarefas compartilham uma única estrutura de estado (`system_data_t glo
 ```
                        ┌────────────────────────────┐
                        │        app_main()          │
-                       │  cria mutex + inicializa HW │
+                       │ cria mutex + inicializa HW │
                        └─────────────┬──────────────┘
                                      │ cria tasks
-        ┌──────────────┬─────────────┼──────────────┬──────────────┐
+        ┌──────────────┬─────────────┼───────────────┬─────
         ▼              ▼             ▼               ▼              
   ┌───────────┐  ┌───────────┐  ┌──────────┐  ┌────────────┐       
   │  JoyRead  │  │  Servos   │  │  Status  │  │  MPU6050   │       
