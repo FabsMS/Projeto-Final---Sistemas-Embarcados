@@ -28,7 +28,7 @@
 
 //   LIMITADORES MANUAIS DOS SERVOS (em %)
 #define SERVO_X_MIN_PERCENT     0     // limite inferior do servo X
-#define SERVO_X_MAX_PERCENT     10   // limite superior do servo X
+#define SERVO_X_MAX_PERCENT     100   // limite superior do servo X
 #define SERVO_Y_MIN_PERCENT     0     // limite inferior do servo Y
 #define SERVO_Y_MAX_PERCENT     100   // limite superior do servo Y
 
