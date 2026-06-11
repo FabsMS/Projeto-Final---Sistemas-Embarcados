@@ -233,7 +233,7 @@ projeto-final/
 
 - **Fabrício Moreno** ([@FabsMS](https://github.com/FabsMS))
 - **Maria Eduarda**
-- **Luccas Daris**
+- **Lucas Daris**
 - **Ynnayron Juan**
 
 ---
