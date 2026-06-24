@@ -14,24 +14,24 @@
 // ────────────────────────────────────────────────────────────
 
 // Período da task (ms) — 10 ms = 100 Hz de amostragem
-#define MPU_TASK_PERIOD_MS      10
-#define MPU_DT                  (MPU_TASK_PERIOD_MS / 1000.0f)
+#define MPU_TASK_PERIOD_MS 10
+#define MPU_DT (MPU_TASK_PERIOD_MS / 1000.0f)
 
 // Filtro complementar: quanto do giroscópio preservar a cada ciclo.
 // Alpha próximo de 1 → confia mais no giroscópio (menos ruído, mais drift).
 // Alpha próximo de 0 → confia mais no acelerômetro (sem drift, mais ruído).
 // 0.96 é um valor clássico para 100 Hz.
-#define COMP_FILTER_ALPHA       0.96f
+#define COMP_FILTER_ALPHA 0.96f
 
 // Número de amostras para calibração do offset do giroscópio
-#define GYRO_CALIB_SAMPLES      200
+#define GYRO_CALIB_SAMPLES 200
 
 // Timeout I²C — valor generoso para o Wokwi (simulador é mais lento que hardware real)
-#define I2C_TIMEOUT_MS          100
+#define I2C_TIMEOUT_MS 100
 
 // Taxa de envio pela UART (a cada N ciclos de task)
 // 10 ms × 10 = 100 ms → 10 Hz no serial (não polui o monitor)
-#define UART_SEND_EVERY_N       50
+#define UART_SEND_EVERY_N 50
 
 // ────────────────────────────────────────────────────────────
 //  Offsets de calibração (preenchidos em mpu6050_init)
@@ -46,7 +46,7 @@ static float gyro_offset_z = 0.0f;
 
 static esp_err_t i2c_write_byte(uint8_t reg, uint8_t value)
 {
-    uint8_t buf[2] = { reg, value };
+    uint8_t buf[2] = {reg, value};
     return i2c_master_write_to_device(
         MPU_I2C_PORT, MPU6050_ADDR,
         buf, sizeof(buf),
@@ -71,9 +71,10 @@ static inline int16_t read_word(const uint8_t *buf, int offset)
 // ────────────────────────────────────────────────────────────
 //  Leitura bruta do sensor
 // ────────────────────────────────────────────────────────────
-typedef struct {
-    float ax, ay, az;   // aceleração em g
-    float gx, gy, gz;   // velocidade angular em °/s
+typedef struct
+{
+    float ax, ay, az; // aceleração em g
+    float gx, gy, gz; // velocidade angular em °/s
 } mpu_data_t;
 
 static bool mpu_read_raw(mpu_data_t *out)
@@ -82,13 +83,14 @@ static bool mpu_read_raw(mpu_data_t *out)
 
     // Lê acelerômetro (6 bytes) + temperatura (2, descartados) + giroscópio (6)
     // a partir do registrador ACCEL_XOUT_H (0x3B) em rajada de 14 bytes
-    if (i2c_read_bytes(MPU_REG_ACCEL_XOUT_H, buf, 14) != ESP_OK) return false;
+    if (i2c_read_bytes(MPU_REG_ACCEL_XOUT_H, buf, 14) != ESP_OK)
+        return false;
 
-    int16_t raw_ax = read_word(buf,  0);
-    int16_t raw_ay = read_word(buf,  2);
-    int16_t raw_az = read_word(buf,  4);
+    int16_t raw_ax = read_word(buf, 0);
+    int16_t raw_ay = read_word(buf, 2);
+    int16_t raw_az = read_word(buf, 4);
     // buf[6..7] = temperatura (ignorada aqui)
-    int16_t raw_gx = read_word(buf,  8);
+    int16_t raw_gx = read_word(buf, 8);
     int16_t raw_gy = read_word(buf, 10);
     int16_t raw_gz = read_word(buf, 12);
 
@@ -119,18 +121,22 @@ static void calibrate_gyro(void)
     uint8_t buf[6];
 
     // Leituras em rajada sem delay entre elas — sem risco de travar o watchdog
-    for (int i = 0; i < GYRO_CALIB_SAMPLES; i++) {
-        if (i2c_read_bytes(MPU_REG_GYRO_XOUT_H, buf, 6) == ESP_OK) {
+    for (int i = 0; i < GYRO_CALIB_SAMPLES; i++)
+    {
+        if (i2c_read_bytes(MPU_REG_GYRO_XOUT_H, buf, 6) == ESP_OK)
+        {
             sx += (int16_t)((buf[0] << 8) | buf[1]);
             sy += (int16_t)((buf[2] << 8) | buf[3]);
             sz += (int16_t)((buf[4] << 8) | buf[5]);
             count++;
         }
         // Cede o processador a cada 20 amostras para não monopolizar a CPU
-        if (i % 20 == 19) vTaskDelay(1);
+        if (i % 20 == 19)
+            vTaskDelay(1);
     }
 
-    if (count == 0) count = 1; // proteção contra divisão por zero
+    if (count == 0)
+        count = 1; // proteção contra divisão por zero
     gyro_offset_x = (float)(sx / count) / GYRO_SENSITIVITY;
     gyro_offset_y = (float)(sy / count) / GYRO_SENSITIVITY;
     gyro_offset_z = (float)(sz / count) / GYRO_SENSITIVITY;
@@ -146,20 +152,30 @@ bool mpu6050_init(void)
 {
     // Configura o barramento I²C como master
     i2c_config_t conf = {
-        .mode             = I2C_MODE_MASTER,
-        .sda_io_num       = MPU_SDA_PIN,
-        .scl_io_num       = MPU_SCL_PIN,
-        .sda_pullup_en    = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en    = GPIO_PULLUP_ENABLE,
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = MPU_SDA_PIN,
+        .scl_io_num = MPU_SCL_PIN,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
         .master.clk_speed = MPU_I2C_FREQ_HZ,
     };
     ESP_ERROR_CHECK(i2c_param_config(MPU_I2C_PORT, &conf));
     ESP_ERROR_CHECK(i2c_driver_install(MPU_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0));
 
-    // Verifica identidade do chip
+    // Aguarda o barramento estabilizar após inicialização
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    // Leitura descartável para "aquecer" o barramento I²C
+    // (bug conhecido do driver legado no ESP32-C6: primeira leitura pode retornar lixo)
+    uint8_t dummy = 0;
+    i2c_read_bytes(MPU_REG_WHO_AM_I, &dummy, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Agora lê de verdade
     uint8_t who = 0;
-    if (i2c_read_bytes(MPU_REG_WHO_AM_I, &who, 1) != ESP_OK || who != 0x68) {
-        printf("[MPU6050] ERRO: WHO_AM_I = 0x%02X (esperado 0x68)\n", who);
+    if (i2c_read_bytes(MPU_REG_WHO_AM_I, &who, 1) != ESP_OK || (who != 0x68 && who != 0x70))
+    {
+        printf("[MPU6050] ERRO: WHO_AM_I = 0x%02X (esperado 0x68 ou 0x70)\n", who);
         return false;
     }
     printf("[MPU6050] Sensor detectado (WHO_AM_I=0x%02X)\n", who);
@@ -180,7 +196,7 @@ bool mpu6050_init(void)
     // Escala do acelerômetro: ±2 g (00 nos bits [4:3])
     ESP_ERROR_CHECK(i2c_write_byte(MPU_REG_ACCEL_CONFIG, 0x00));
 
-    vTaskDelay(pdMS_TO_TICKS(100));  // aguarda estabilização
+    vTaskDelay(pdMS_TO_TICKS(100)); // aguarda estabilização
 
     // Calibração é feita dentro da mpu6050_task para não bloquear app_main
     return true;
@@ -199,12 +215,14 @@ void mpu6050_task(void *pvParameters)
 
     mpu_data_t sensor;
     float pitch = 0.0f;
-    float roll  = 0.0f;
+    float roll = 0.0f;
     bool initialized = false;
     int uart_counter = 0;
 
-    for (;;) {
-        if (!mpu_read_raw(&sensor)) {
+    for (;;)
+    {
+        if (!mpu_read_raw(&sensor))
+        {
             // Falha de leitura: aguarda e tenta de novo sem atualizar os ângulos
             vTaskDelay(pdMS_TO_TICKS(MPU_TASK_PERIOD_MS));
             continue;
@@ -212,37 +230,40 @@ void mpu6050_task(void *pvParameters)
 
         // ── Ângulos só pelo acelerômetro (referência absoluta, sem drift) ──
         float accel_pitch = atan2f(sensor.ay,
-                                   sqrtf(sensor.ax * sensor.ax + sensor.az * sensor.az))
-                            * (float)RAD_TO_DEG;
-        float accel_roll  = atan2f(-sensor.ax,
-                                   sqrtf(sensor.ay * sensor.ay + sensor.az * sensor.az))
-                            * (float)RAD_TO_DEG;
+                                   sqrtf(sensor.ax * sensor.ax + sensor.az * sensor.az)) *
+                            (float)RAD_TO_DEG;
+        float accel_roll = atan2f(-sensor.ax,
+                                  sqrtf(sensor.ay * sensor.ay + sensor.az * sensor.az)) *
+                           (float)RAD_TO_DEG;
 
         // Na primeira iteração usa só o acelerômetro para inicializar
-        if (!initialized) {
+        if (!initialized)
+        {
             pitch = accel_pitch;
-            roll  = accel_roll;
+            roll = accel_roll;
             initialized = true;
-        } else {
+        }
+        else
+        {
             // ── Filtro complementar ──────────────────────────────────────────
             // Combina integração do giroscópio (rápida, sem drift de curto prazo)
             // com o acelerômetro (referência de longo prazo, mais ruidoso).
-            pitch = COMP_FILTER_ALPHA * (pitch + sensor.gx * MPU_DT)
-                    + (1.0f - COMP_FILTER_ALPHA) * accel_pitch;
-            roll  = COMP_FILTER_ALPHA * (roll  + sensor.gy * MPU_DT)
-                    + (1.0f - COMP_FILTER_ALPHA) * accel_roll;
+            pitch = COMP_FILTER_ALPHA * (pitch + sensor.gx * MPU_DT) + (1.0f - COMP_FILTER_ALPHA) * accel_pitch;
+            roll = COMP_FILTER_ALPHA * (roll + sensor.gy * MPU_DT) + (1.0f - COMP_FILTER_ALPHA) * accel_roll;
         }
 
         // ── Grava na estrutura global (thread-safe) ──────────────────────────
-        if (xSemaphoreTake(data_mutex, portMAX_DELAY) == pdTRUE) {
+        if (xSemaphoreTake(data_mutex, portMAX_DELAY) == pdTRUE)
+        {
             global_data.filtered_pitch = pitch;
-            global_data.filtered_roll  = roll;
+            global_data.filtered_roll = roll;
 
             // Se o botão pediu re-calibração, recoloca os ângulos na referência
             // do acelerômetro e limpa a flag.
-            if (global_data.calibration_trigger) {
+            if (global_data.calibration_trigger)
+            {
                 pitch = accel_pitch;
-                roll  = accel_roll;
+                roll = accel_roll;
                 global_data.calibration_trigger = false;
                 printf("[MPU6050] Recalibracao de angulos executada\n");
             }
@@ -252,18 +273,22 @@ void mpu6050_task(void *pvParameters)
 
         // ── Envio periódico via UART (JSON) ──────────────────────────────────
         uart_counter++;
-        if (uart_counter >= UART_SEND_EVERY_N) {
+        if (uart_counter >= UART_SEND_EVERY_N)
+        {
             uart_counter = 0;
 
             // Captura joystick e botão para incluir no JSON
             int jx, jy;
             bool btn;
-            if (xSemaphoreTake(data_mutex, portMAX_DELAY) == pdTRUE) {
-                jx  = global_data.joy_x_raw;
-                jy  = global_data.joy_y_raw;
+            if (xSemaphoreTake(data_mutex, portMAX_DELAY) == pdTRUE)
+            {
+                jx = global_data.joy_x_raw;
+                jy = global_data.joy_y_raw;
                 btn = global_data.btn_pressed;
                 xSemaphoreGive(data_mutex);
-            } else {
+            }
+            else
+            {
                 jx = jy = 0;
                 btn = false;
             }

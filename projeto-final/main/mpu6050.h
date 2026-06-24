@@ -9,7 +9,7 @@
 #define MPU_SDA_PIN     8
 #define MPU_SCL_PIN     9
 #define MPU_I2C_PORT    I2C_NUM_0
-#define MPU_I2C_FREQ_HZ 400000   // Fast-mode (400 kHz)
+#define MPU_I2C_FREQ_HZ 100000
 
 // Endereço I²C do MPU6050 (AD0 = GND → 0x68)
 #define MPU6050_ADDR    0x68

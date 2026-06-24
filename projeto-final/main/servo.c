@@ -7,7 +7,7 @@
 #include "system_common.h"
 
 
-// pinos dos servos 
+// pinos dos servos
 #define SERVO_X_PIN             15
 #define SERVO_Y_PIN             2
 
@@ -19,27 +19,45 @@
 #define LEDC_CHANNEL_X          LEDC_CHANNEL_0
 #define LEDC_CHANNEL_Y          LEDC_CHANNEL_1
 
-// fator de suavização (quanto menor, mais "macio" o movimento)
-#define SERVO_SMOOTH_FACTOR     0.60f
-// zona morta no centro do joystick (evita tremor com o stick parado)
-#define JOY_DEADZONE            50
+// fator de suavização
+#define SERVO_SMOOTH_FACTOR     0.20f   // mais lento = mais suave sob carga
+
+// zona morta do joystick — aumentada pra evitar micro-movimentos de ADC
+#define JOY_DEADZONE            150
 #define ADC_MIN_READ            100
 #define ADC_MAX_READ            4000
 
-//   LIMITADORES MANUAIS DOS SERVOS (em %)
-#define SERVO_X_MIN_PERCENT     0     // limite inferior do servo X
-#define SERVO_X_MAX_PERCENT     100   // limite superior do servo X
-#define SERVO_Y_MIN_PERCENT     0     // limite inferior do servo Y
-#define SERVO_Y_MAX_PERCENT     100   // limite superior do servo Y
+// LIMITADORES MANUAIS DOS SERVOS (em %)
+#define SERVO_X_MIN_PERCENT     30
+#define SERVO_X_MAX_PERCENT     80
+#define SERVO_Y_MIN_PERCENT     30
+#define SERVO_Y_MAX_PERCENT     80
 
-// faixa absoluta de PWM que cobre o curso total do servo (~0° a 180°)
-// 50Hz @ 13 bits: 1ms = 410, 2ms = 819
-// dá uma margem pra não forçar a engrenagem nos extremos
+// POSIÇÃO INICIAL DOS SERVOS (em %, 0 a 100)
+// 50 = centro exato. Ajuste até a mesa ficar nivelada.
+// Aumente se a mesa cai pra frente/esquerda, diminua se cai pra trás/direita.
+#define SERVO_X_START_PERCENT  100
+#define SERVO_Y_START_PERCENT  100
+
+// faixa de PWM (~0° a 180°) — 50Hz @ 13 bits
 #define SERVO_PWM_ABS_MIN       410   // ~0°
 #define SERVO_PWM_ABS_MAX       820   // ~180°
 
+// ── Gate de movimento ─────────────────────────────────────────────────────────
+// Threshold em ticks de duty cycle para considerar que houve movimento real.
+// Com faixa 410-820 (410 ticks = 180°), 1 tick ≈ 0,44°. Valor 3 = ~1,3°.
+#define SERVO_MOVE_THRESHOLD    5
 
-// faz interpolação linear entre dois intervalos e trava nos limites
+// Quantos ciclos de 20ms enviar após parar, para o servo assentar na posição
+// antes de desligar o sinal completamente.
+#define SERVO_SETTLE_CYCLES     3
+
+// Snap: se o filtro estiver a menos de N ticks do target, força convergência
+// imediata em vez de continuar oscilando em float.
+#define SERVO_SNAP_THRESHOLD    3.0f
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 static int map_value(int value, int in_min, int in_max, int out_min, int out_max) {
     long result = (long)(value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
     if (out_min < out_max) {
@@ -52,14 +70,12 @@ static int map_value(int value, int in_min, int in_max, int out_min, int out_max
     return (int)result;
 }
 
-// se o joystick estiver perto do centro, força o valor central
 static int apply_deadzone(int raw_val) {
     int center = (ADC_MAX_READ + ADC_MIN_READ) / 2;
     if (abs(raw_val - center) < JOY_DEADZONE) return center;
     return raw_val;
 }
 
-// converte a porcentagem definida nos #define em PWM real
 static int percent_to_pwm(int percent) {
     if (percent < 0)   percent = 0;
     if (percent > 100) percent = 100;
@@ -67,9 +83,22 @@ static int percent_to_pwm(int percent) {
            ((SERVO_PWM_ABS_MAX - SERVO_PWM_ABS_MIN) * percent) / 100;
 }
 
+// Ativa o canal LEDC de volta após ter sido parado com ledc_stop()
+static void ledc_restart_channel(ledc_channel_t channel, int gpio_num) {
+    ledc_channel_config_t ch = {
+        .speed_mode = LEDC_MODE,
+        .channel    = channel,
+        .timer_sel  = LEDC_TIMER_SERVO,
+        .intr_type  = LEDC_INTR_DISABLE,
+        .gpio_num   = gpio_num,
+        .duty       = 0,
+        .hpoint     = 0
+    };
+    ledc_channel_config(&ch);
+}
+
 
 void servos_init(void) {
-    // timer compartilhado entre os dois canais
     ledc_timer_config_t timer_servo = {
         .speed_mode      = LEDC_MODE,
         .timer_num       = LEDC_TIMER_SERVO,
@@ -79,7 +108,6 @@ void servos_init(void) {
     };
     ESP_ERROR_CHECK(ledc_timer_config(&timer_servo));
 
-    // canal do servo X
     ledc_channel_config_t ch_x = {
         .speed_mode = LEDC_MODE,
         .channel    = LEDC_CHANNEL_X,
@@ -91,7 +119,6 @@ void servos_init(void) {
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ch_x));
 
-    // canal do servo Y
     ledc_channel_config_t ch_y = {
         .speed_mode = LEDC_MODE,
         .channel    = LEDC_CHANNEL_Y,
@@ -103,7 +130,6 @@ void servos_init(void) {
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ch_y));
 
-    // aplica os limites definidos pelos #define direto no estado global
     if (xSemaphoreTake(data_mutex, portMAX_DELAY) == pdTRUE) {
         global_data.servo_min_x = percent_to_pwm(SERVO_X_MIN_PERCENT);
         global_data.servo_max_x = percent_to_pwm(SERVO_X_MAX_PERCENT);
@@ -117,48 +143,109 @@ void servos_init(void) {
 void servo_control_task(void *pvParameters) {
     system_data_t local;
 
-    // guarda a posição atual em float (precisa pro filtro suavizar bem)
     static float current_x_f = 0.0f;
     static float current_y_f = 0.0f;
     bool initialized = false;
 
+    // Gate: última posição enviada ao hardware
+    int last_sent_x = -1;
+    int last_sent_y = -1;
+
+    // Contadores de assentamento pós-movimento
+    int settle_x = 0;
+    int settle_y = 0;
+
+    // Rastreia se o canal está ativo ou foi desligado com ledc_stop()
+    bool channel_x_active = true;
+    bool channel_y_active = true;
+
     printf(">>> servo_control_task iniciada\n");
 
     for (;;) {
-        // pega a leitura mais recente do joystick
         if (xSemaphoreTake(data_mutex, portMAX_DELAY) == pdTRUE) {
             local = global_data;
             xSemaphoreGive(data_mutex);
         }
 
-        // na primeira passada, centraliza os servos
         if (!initialized) {
-            current_x_f = (float)(local.servo_min_x + local.servo_max_x) / 2.0f;
-            current_y_f = (float)(local.servo_min_y + local.servo_max_y) / 2.0f;
+            current_x_f = (float)percent_to_pwm(SERVO_X_START_PERCENT);
+            current_y_f = (float)percent_to_pwm(SERVO_Y_START_PERCENT);
             initialized = true;
         }
 
-        // tira o ruído da zona central
         int joy_x_clean = apply_deadzone(local.joy_x_raw);
         int joy_y_clean = apply_deadzone(local.joy_y_raw);
 
-        // converte 0..4095 do ADC pra faixa de PWM do servo
         int target_x = map_value(joy_x_clean, ADC_MIN_READ, ADC_MAX_READ,
                                  local.servo_max_x, local.servo_min_x);
         int target_y = map_value(joy_y_clean, ADC_MIN_READ, ADC_MAX_READ,
                                  local.servo_max_y, local.servo_min_y);
 
-        // filtro exponencial: aproxima da posição alvo aos poucos
-        current_x_f += ((float)target_x - current_x_f) * SERVO_SMOOTH_FACTOR;
-        current_y_f += ((float)target_y - current_y_f) * SERVO_SMOOTH_FACTOR;
+        // Filtro exponencial com snap: se estiver muito perto do target,
+        // força convergência exata em vez de continuar oscilando em float.
+        float dx = (float)target_x - current_x_f;
+        float dy = (float)target_y - current_y_f;
 
-        // manda pro hardware
-        ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_X, (int)current_x_f);
-        ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_X);
-        ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_Y, (int)current_y_f);
-        ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_Y);
+        if (fabsf(dx) < SERVO_SNAP_THRESHOLD) {
+            current_x_f = (float)target_x;  // snap: trava no alvo
+        } else {
+            current_x_f += dx * SERVO_SMOOTH_FACTOR;
+        }
 
-        // 50Hz = mesmo período do PWM do servo
+        if (fabsf(dy) < SERVO_SNAP_THRESHOLD) {
+            current_y_f = (float)target_y;
+        } else {
+            current_y_f += dy * SERVO_SMOOTH_FACTOR;
+        }
+
+        int new_x = (int)current_x_f;
+        int new_y = (int)current_y_f;
+
+        // ── Gate eixo X ───────────────────────────────────────────────────────
+        if (abs(new_x - last_sent_x) >= SERVO_MOVE_THRESHOLD) {
+            // Movimento detectado: (re)ativa canal se estava desligado
+            if (!channel_x_active) {
+                ledc_restart_channel(LEDC_CHANNEL_X, SERVO_X_PIN);
+                channel_x_active = true;
+            }
+            ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_X, new_x);
+            ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_X);
+            last_sent_x = new_x;
+            settle_x = 0;
+
+        } else if (settle_x < SERVO_SETTLE_CYCLES) {
+            // Recém parou: envia mais alguns ciclos para assentar
+            ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_X, new_x);
+            ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_X);
+            settle_x++;
+
+        } else if (channel_x_active) {
+            // Assentou: desliga o sinal completamente para o SG90 não tremer
+            ledc_stop(LEDC_MODE, LEDC_CHANNEL_X, 0);
+            channel_x_active = false;
+        }
+
+        // ── Gate eixo Y (mesma lógica) ────────────────────────────────────────
+        if (abs(new_y - last_sent_y) >= SERVO_MOVE_THRESHOLD) {
+            if (!channel_y_active) {
+                ledc_restart_channel(LEDC_CHANNEL_Y, SERVO_Y_PIN);
+                channel_y_active = true;
+            }
+            ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_Y, new_y);
+            ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_Y);
+            last_sent_y = new_y;
+            settle_y = 0;
+
+        } else if (settle_y < SERVO_SETTLE_CYCLES) {
+            ledc_set_duty(LEDC_MODE, LEDC_CHANNEL_Y, new_y);
+            ledc_update_duty(LEDC_MODE, LEDC_CHANNEL_Y);
+            settle_y++;
+
+        } else if (channel_y_active) {
+            ledc_stop(LEDC_MODE, LEDC_CHANNEL_Y, 0);
+            channel_y_active = false;
+        }
+
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
