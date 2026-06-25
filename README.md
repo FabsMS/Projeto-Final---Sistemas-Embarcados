@@ -238,4 +238,9 @@ projeto-final/
 
 ---
 
+## Relatório Técnico
+
+[Projeto Final - Sistemas Embarcados - 2026.1
+](https://docs.google.com/document/d/13VrW4pBpzdPR74XtPbXKjNSfWW8jEdVD69yd7XxjrTg/edit?usp=sharing)
+
 <p align="center"><sub>Projeto Final · Sistemas Embarcados · 2026.1</sub></p>
